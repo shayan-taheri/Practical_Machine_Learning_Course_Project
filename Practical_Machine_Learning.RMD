@@ -1,0 +1,98 @@
+---
+title: "Practical Machine Learning - Prediction Assignment Writeup"
+author: "Shayan (Sean) Taheri"
+date: "June 10, 2019"
+output:
+  html_document:
+    df_print: paged
+---
+
+In this assignment, the main plan is analysis of the given datasets for determination of the activities of an individual platform. Regarding this analysis, two main libraries are utilized that allow us to generate correct respose for each of the 20 test data cases (requested in the project description). In order to improve the consistency of the result, a seed value is used.
+
+```{r}
+library(Hmisc)
+library(caret)
+library(randomForest)
+library(foreach)
+library(doParallel)
+set.seed(2048)
+options(warn=-1)
+```
+
+In the beginning, the data from the training and the testing procedures are loaded into the working directory.
+
+```{r}
+training_data <- read.csv("./data/pml-training.csv", na.strings=c("#DIV/0!") )
+evaluation_data <- read.csv("./data/pml-testing.csv", na.strings=c("#DIV/0!") )
+```
+
+Next, all columns from index 8 to the end are casted as numeric.
+
+```{r}
+for(i in c(8:ncol(training_data)-1)) {training_data[,i] = as.numeric(as.character(training_data[,i]))}
+
+for(i in c(8:ncol(evaluation_data)-1)) {evaluation_data[,i] = as.numeric(as.character(evaluation_data[,i]))}
+```
+
+Due to the emptiness of a number of columns, they have much less contribution to the prediction. A feature set is selected that only includes complete columns. Also, the username, timestamps, and windows are removed from the process. Afterwards, the featureset is determined and displayed.
+
+```{r}
+feature_set <- colnames(training_data[colSums(is.na(training_data)) == 0])[-(1:7)]
+model_data <- training_data[feature_set]
+feature_set
+```
+
+The model data is built from our feature set.
+
+```{r}
+idx <- createDataPartition(y=model_data$classe, p=0.75, list=FALSE )
+training <- model_data[idx,]
+testing <- model_data[-idx,]
+```
+
+In the next step, five random forests are built with 150 trees in each. Next, parallel processing is leveraged to build this model.
+
+```{r}
+registerDoParallel()
+x <- training[-ncol(training)]
+y <- training$classe
+
+rf <- foreach(ntree=rep(150, 6), .combine=randomForest::combine, .packages='randomForest') %dopar% {
+randomForest(x, y, ntree=ntree) 
+}
+```
+
+Let's calculate the error reports for both training and testing data.
+
+```{r}
+predictions1 <- predict(rf, newdata=training)
+confusionMatrix(predictions1,training$classe)
+
+
+predictions2 <- predict(rf, newdata=testing)
+confusionMatrix(predictions2,testing$classe)
+```
+
+Conclusions and Test Data Submit
+--------------------------------
+
+The accuracy of the developed model can be observed from the confusion matrix. An experiment has been executed with Principal Component Analysis (PCA) and other models demonstrate the strength of our system in compare with them. Due to the accuracy of 99%, all the predictions seem to be correct.
+
+```{r}
+pml_write_files = function(x){
+  n = length(x)
+  for(i in 1:n){
+    filename = paste0("./predictions/Problem_ID_",i,".txt")
+    write.table(x[i],file=filename,quote=FALSE,row.names=FALSE,col.names=FALSE)
+  }
+}
+
+
+x <- evaluation_data
+x <- x[feature_set[feature_set!='classe']]
+answers <- predict(rf, newdata=x)
+
+answers
+
+pml_write_files(answers)
+```
